@@ -10,17 +10,14 @@ venv/
 node_modules/
 .cache/
 
-# 로그인 세션 (절대 커밋하지 않음)
-auth/*
-!auth/.gitkeep
+# 로그인 세션 (절대 커밋하지 않음 - 카페/네이버 로그인 상태가 담긴 브라우저 프로필)
+browser_profile/
 
-# 다운로드/생성 결과물 (신문 이미지, PDF)
-output/*
-!output/.gitkeep
+# 다운로드한 신문 이미지 / 결과물
+data/
 
-# 진단용 HTML/스크린샷 (카페 개인정보 포함 가능성 있음)
-diagnostics/*
-!diagnostics/.gitkeep
+# 실행 로그
+logs/
 
 # OS / 에디터
 .DS_Store
