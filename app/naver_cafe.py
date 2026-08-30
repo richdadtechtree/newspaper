@@ -18,12 +18,17 @@ class NaverCafeScraper:
             self.headless = headless
 
         self.playwright = sync_playwright().start()
-        logger.info(f"Launching Chromium with profile at {self.profile_dir} (headless={self.headless})")
 
-        self.context = self.playwright.chromium.launch_persistent_context(
+        # 실제 Google Chrome이 설치된 환경(예: Mac)에서는 채널 "chrome"을 사용해
+        # 네이버의 자동화 탐지를 피한다. Chrome이 없는 환경(예: ARM 리눅스 서버)에서는
+        # PLAYWRIGHT_BROWSER_CHANNEL을 빈 값으로 설정하면 Playwright 내장 Chromium을
+        # 사용한다 (사전에 `playwright install chromium` 필요).
+        channel = os.environ.get("PLAYWRIGHT_BROWSER_CHANNEL", "chrome").strip()
+        logger.info(f"Launching browser with profile at {self.profile_dir} (headless={self.headless}, channel={channel or 'bundled chromium'})")
+
+        launch_kwargs = dict(
             user_data_dir=self.profile_dir,
             headless=self.headless,
-            channel="chrome",
             viewport={"width": 1280, "height": 1024},
             args=[
                 "--disable-blink-features=AutomationControlled",
@@ -31,6 +36,10 @@ class NaverCafeScraper:
                 "--disable-dev-shm-usage"
             ]
         )
+        if channel:
+            launch_kwargs["channel"] = channel
+
+        self.context = self.playwright.chromium.launch_persistent_context(**launch_kwargs)
 
         # Avoid webdriver detection
         self.context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")

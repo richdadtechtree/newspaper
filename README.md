@@ -30,16 +30,21 @@ newspaper/
 ## 준비
 
 1. Python 3.10 이상 설치
-2. **Google Chrome 설치 필요** (네이버의 자동화 탐지를 피하기 위해
+2. **Google Chrome 설치 필요** (네이버의 자동화 탐지를 피하기 위해 기본값은
    Playwright 내장 Chromium이 아니라 실제 Chrome 브라우저를 사용합니다.
-   `channel="chrome"` 옵션 때문에 Mac에 Chrome이 설치되어 있어야 합니다.)
+   Mac, x86_64 리눅스 등에 Chrome을 설치하세요.)
+   - **단, ARM 리눅스 서버(예: Oracle Cloud ARM 인스턴스)는 Google Chrome을
+     지원하지 않습니다.** 이 경우 Chrome 설치를 건너뛰고, 아래 3번에서
+     `playwright install chromium`을 실행한 뒤 `.env`의
+     `PLAYWRIGHT_BROWSER_CHANNEL`을 빈 값으로 설정하세요 (Playwright 내장
+     Chromium 사용).
 3. 의존성 설치
 
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate      # Windows는 .venv\Scripts\activate
    pip install -r requirements.txt
-   playwright install chromium
+   playwright install chromium    # ARM 리눅스 서버는 필수, Chrome을 쓰는 환경은 생략 가능
    ```
 
 ## 0) (선택) 저장 폴더를 구글 드라이브로 지정하기
