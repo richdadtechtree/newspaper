@@ -42,6 +42,31 @@ newspaper/
    playwright install chromium
    ```
 
+## 0) (선택) 저장 폴더를 구글 드라이브로 지정하기
+
+기본값은 프로젝트 안의 `data/newspapers/` 폴더지만, 구글 드라이브 데스크톱 앱을
+설치해뒀다면 그 앱이 동기화하는 폴더에 바로 저장되도록 지정할 수 있다.
+(다운로드한 이미지와 PDF가 자동으로 구글 드라이브에 업로드되는 효과)
+
+1. `.env.example`을 복사해서 `.env` 파일 생성
+   ```bash
+   cp .env.example .env
+   ```
+2. 구글 드라이브가 동기화하는 실제 폴더 경로 확인 (Mac, 최신 "Google Drive for desktop" 기준)
+   ```bash
+   ls ~/Library/CloudStorage/
+   ```
+   `GoogleDrive-내이메일@gmail.com` 같은 폴더가 보이면 그 안에 `내 드라이브` 폴더가 있음
+3. `.env` 파일을 열어서 `NEWSPAPER_OUTPUT_DIR`에 원하는 하위 폴더 경로를 적기
+   (폴더가 미리 없어도 실행 시 자동으로 생성됨)
+   ```
+   NEWSPAPER_OUTPUT_DIR=/Users/본인이름/Library/CloudStorage/GoogleDrive-내이메일@gmail.com/내 드라이브/신문스크랩
+   ```
+4. 저장하고 이후 명령어들은 평소처럼 실행하면 됨. `.env`는 `.gitignore`에
+   포함되어 있어 GitHub에는 올라가지 않음(개인 경로이므로).
+
+이 설정을 하지 않으면 계속 `data/newspapers/`에 저장된다.
+
 ## 1) 최초 로그인 (아이디/비밀번호는 저장하지 않습니다)
 
 ```bash

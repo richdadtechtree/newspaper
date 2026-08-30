@@ -36,7 +36,14 @@ def get_safe_newspaper_dir(date_str: str) -> str:
     if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
         raise ValueError(f"Invalid date format: {date_str}. Expected YYYY-MM-DD.")
 
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'newspapers'))
+    # NEWSPAPER_OUTPUT_DIR(.env)이 설정되어 있으면 그 경로를 사용한다.
+    # 예: 구글 드라이브 데스크톱 앱이 동기화하는 폴더를 지정하면 다운로드/PDF가
+    # 자동으로 구글 드라이브에도 올라간다.
+    custom_base = os.environ.get("NEWSPAPER_OUTPUT_DIR", "").strip()
+    if custom_base:
+        base_dir = os.path.abspath(os.path.expanduser(custom_base))
+    else:
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'newspapers'))
     os.makedirs(base_dir, exist_ok=True)
 
     target_dir = os.path.abspath(os.path.join(base_dir, date_str))
