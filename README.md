@@ -19,6 +19,7 @@ newspaper/
 │   ├── naver_cafe.py        # Playwright로 카페 접속/게시글 탐색/이미지 URL 추출
 │   ├── image_downloader.py  # 이미지 다운로드 + 검증 + metadata.json 저장
 │   ├── pdf_builder.py       # 다운로드된 이미지를 순서대로 PDF 병합
+│   ├── drive_uploader.py    # (선택) rclone으로 구글 드라이브 업로드 + 로컬 정리
 │   └── utils.py             # 로거, 안전한 저장 경로 처리
 ├── browser_profile/         # 네이버 로그인 세션이 저장되는 브라우저 프로필 (git에 커밋되지 않음)
 ├── data/newspapers/         # 날짜별로 다운로드된 이미지 + metadata.json (git에 커밋되지 않음)
@@ -83,6 +84,54 @@ newspaper/
         ├── 2026-08-30.pdf
         └── metadata.json
 ```
+
+## 0-2) (선택, 화면 없는 서버 전용) 구글 드라이브에 업로드 후 서버 로컬 파일 자동 삭제
+
+오라클 클라우드 같은 화면 없는(headless) 서버에는 구글 드라이브 데스크톱 앱을
+설치할 수 없다. 대신 [rclone](https://rclone.org)으로 구글 드라이브에 업로드한
+뒤, 업로드가 끝나면 서버에 남은 로컬 파일을 자동으로 삭제해서 서버 디스크
+용량을 아낀다.
+
+1. rclone 설치
+   ```bash
+   curl https://rclone.org/install.sh | sudo bash
+   ```
+2. 구글 드라이브 계정 연결 (최초 1회, 대화형 설정)
+   ```bash
+   rclone config
+   ```
+   - `n` (New remote) → 이름은 예: `gdrive`
+   - Storage 종류: `Google Drive` (`drive`) 선택
+   - `client_id`, `client_secret`: 비워두고 Enter (rclone 공용 client_id 사용).
+     단, 공용 client_id는 2026년 중 지원 종료 예정이라는 안내가 나온다 — 매일
+     자동 실행하는 운영 단계에서는 [전용 client_id를 직접
+     만드는 것](https://rclone.org/drive/#making-your-own-client-id)을 권장
+   - scope: `3` (`drive.file`, rclone이 만든 파일에만 접근하는 최소 권한)
+   - `service_account_file`: 비워두고 Enter
+   - `Edit advanced config?`: `n`
+   - `Use auto config?`: 서버에 브라우저가 없으므로 `n`
+   - 화면에 나오는 `rclone authorize "drive" "..."` 명령어를 **브라우저가
+     있는 다른 컴퓨터(예: Mac)에 rclone을 설치해서 그대로 실행** → 구글
+     로그인/허용 → 출력된 토큰을 복사해서 서버의 `config_token>`에 붙여넣기
+   - `Configure this as a Shared Drive?`: `n`
+   - 이후 `y` → `q`로 설정 종료
+3. 연결 확인
+   ```bash
+   rclone lsd gdrive:
+   ```
+4. `.env`에 사용할 remote와 드라이브 안 폴더 경로 설정
+   ```
+   RCLONE_REMOTE=gdrive:신문스크랩
+   ```
+
+설정해두면, PDF 생성까지 끝난 뒤 자동으로 `RCLONE_REMOTE`에 지정한 구글
+드라이브 폴더로 업로드하고 (`<년-월>/<날짜>/` 구조 동일하게 유지), 업로드가
+성공하면 서버의 로컬 파일(이미지/PDF)은 바로 삭제한다. `metadata.json`만
+가벼운 완료 기록으로 남아서, 재실행해도 중복 다운로드/중복 업로드하지 않는다.
+
+`RCLONE_REMOTE`를 비워두면 이 업로드 단계는 건너뛰고 항상 로컬(서버 디스크)에
+남는다. rclone이 설치되어 있지 않거나 업로드가 실패하면 로컬 파일을 삭제하지
+않고 그대로 보존한다.
 
 ## 1) 최초 로그인 (아이디/비밀번호는 저장하지 않습니다)
 

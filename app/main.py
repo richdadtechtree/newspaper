@@ -12,6 +12,40 @@ from app.utils import logger, get_safe_newspaper_dir
 from app.naver_cafe import NaverCafeScraper
 from app.image_downloader import download_images
 from app.pdf_builder import ensure_pdf
+from app.drive_uploader import upload_and_cleanup
+
+
+def finalize_output(target_date: str):
+    """
+    Ensures the PDF exists, then (if RCLONE_REMOTE is configured) uploads the
+    day's folder to Google Drive and deletes it locally to save server disk
+    space. Returns {"location": str, "uploaded": bool}, or None if there is
+    no metadata yet for this date.
+    """
+    target_dir = get_safe_newspaper_dir(target_date)
+    metadata_path = os.path.join(target_dir, "metadata.json")
+    if not os.path.exists(metadata_path):
+        return None
+
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    if metadata.get("storage") == "uploaded_and_cleaned":
+        return {"location": metadata.get("drive_path"), "uploaded": True}
+
+    pdf_path = ensure_pdf(target_date)
+
+    drive_path = upload_and_cleanup(target_dir, target_date)
+    if drive_path:
+        os.makedirs(target_dir, exist_ok=True)
+        metadata["storage"] = "uploaded_and_cleaned"
+        metadata["drive_path"] = drive_path
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        return {"location": drive_path, "uploaded": True}
+
+    return {"location": pdf_path or target_dir, "uploaded": False}
+
 
 def main():
     load_dotenv()
@@ -47,12 +81,13 @@ def main():
     logger.info(f"Target date: {target_date}")
 
     # PDF-only mode: skip scraping entirely, just build/refresh the PDF
+    # (and upload it to Google Drive if configured)
     if args.pdf_only:
-        pdf_path = ensure_pdf(target_date)
-        if pdf_path:
+        result = finalize_output(target_date)
+        if result:
             print(f"\n==========================================")
             print(f"{target_date} PDF 생성 완료")
-            print(f"위치: {pdf_path}")
+            print(f"위치: {result['location']}" + (" (구글 드라이브)" if result["uploaded"] else ""))
             print(f"==========================================\n")
         else:
             print(f"\n[Error] {target_date}에 대해 PDF를 만들 이미지가 없습니다. 먼저 python app/main.py --date {target_date} 를 실행하세요.\n")
@@ -67,12 +102,11 @@ def main():
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 meta = json.load(f)
             if meta.get("status") == "success":
-                pdf_path = ensure_pdf(target_date)
+                result = finalize_output(target_date)
                 print(f"\n==========================================")
                 print(f"이미 {target_date} 신문을 처리했습니다. (Status: success)")
-                print(f"위치: {target_dir}")
-                if pdf_path:
-                    print(f"PDF: {pdf_path}")
+                if result:
+                    print(f"위치: {result['location']}" + (" (구글 드라이브)" if result["uploaded"] else ""))
                 print(f"==========================================\n")
                 return
     except Exception as e:
@@ -125,14 +159,13 @@ def main():
 
         # 5. Output Summary
         if metadata.get("status") == "success":
-            pdf_path = ensure_pdf(target_date)
+            result = finalize_output(target_date)
             print(f"\n==========================================")
             print(f"{target_date} 신문 수집 완료")
             print(f"제목: {post_title}")
             print(f"이미지: {metadata['downloaded_count']}/{metadata['image_count']}장")
-            print(f"위치: {get_safe_newspaper_dir(target_date)}")
-            if pdf_path:
-                print(f"PDF: {pdf_path}")
+            if result:
+                print(f"위치: {result['location']}" + (" (구글 드라이브)" if result["uploaded"] else ""))
             print(f"==========================================\n")
         else:
             print(f"\n==========================================")
