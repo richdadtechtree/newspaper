@@ -163,6 +163,35 @@ python app/main.py
 - 이미 다운로드된 이미지로 PDF만 (다시) 만들려면:
   `python app/main.py --pdf-only --date 2026-08-30`
 
+## 3) (화면 없는 서버 전용) 매일 아침 자동 실행 — cron
+
+`scripts/run_daily.sh`는 성공(오늘 신문 수집 완료)할 때까지, 또는 07:00이
+지날 때까지 5분 간격으로 `python app/main.py`를 재시도한 뒤 스스로
+종료하는 스크립트다. 게시글이 몇 시에 올라올지 정확히 알 수 없을 때
+유용하다. 한 번 성공하면(또는 컷오프 시각이 지나면) 바로 종료하므로,
+cron에는 하루 한 번(05:30)만 등록하면 된다.
+
+1. 스크립트 실행 권한 확인 (git에서 이미 실행 권한이 붙어서 오지만, 안 붙어
+   있다면)
+   ```bash
+   chmod +x scripts/run_daily.sh
+   ```
+2. crontab 등록
+   ```bash
+   crontab -e
+   ```
+   맨 아래에 이 줄 추가 (경로는 실제 프로젝트 위치에 맞게 수정):
+   ```
+   30 5 * * * /home/ubuntu/newspaper/scripts/run_daily.sh >> /home/ubuntu/newspaper/logs/cron.log 2>&1
+   ```
+3. 저장하고 종료. 등록 확인:
+   ```bash
+   crontab -l
+   ```
+
+컷오프 시각(기본 07:00)이나 재시도 간격(기본 5분)을 바꾸려면
+`scripts/run_daily.sh` 안의 `CUTOFF`, `INTERVAL_SECONDS` 값을 수정하면 된다.
+
 ## 문제 발생 시
 
 - **로그인 오류**: `python app/main.py --login`을 다시 실행해 세션을 갱신
@@ -176,5 +205,4 @@ python app/main.py
 
 1. OpenAI API로 기사별 요약
 2. 부동산/정책 핵심 뉴스 TOP 5 추출
-3. 매일 아침 자동 실행 스케줄링
-4. Slack/Telegram/이메일로 브리핑 전송
+3. Slack/Telegram/이메일로 브리핑 전송
