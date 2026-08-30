@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Playwright
+node_modules/
+.cache/
+
+# 로그인 세션 (절대 커밋하지 않음)
+auth/*
+!auth/.gitkeep
+
+# 다운로드/생성 결과물 (신문 이미지, PDF)
+output/*
+!output/.gitkeep
+
+# 진단용 HTML/스크린샷 (카페 개인정보 포함 가능성 있음)
+diagnostics/*
+!diagnostics/.gitkeep
+
+# OS / 에디터
+.DS_Store
+.idea/
+.vscode/
