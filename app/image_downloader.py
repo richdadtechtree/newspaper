@@ -103,15 +103,19 @@ def download_images(
             download_details.append({"filename": filename, "status": "failed", "error": str(e)})
 
     # Verification
-    status = "success"
-    if success_count < total_images:
-        status = "failed"
+    # 신문 페이지 수는 날짜마다 다르므로(예: 22장, 30장 등), 고정된 기대치 미달을
+    # 실패로 취급하지 않는다. 게시글에서 실제로 찾은 이미지(total_images) 중
+    # 다운로드 자체에 실패한 것이 있는지만으로 성공/실패를 판단한다.
+    status = "success" if success_count == total_images else "failed"
+    if status == "failed":
         logger.warning(f"Download completed with failures: {success_count}/{total_images} succeeded.")
-    elif success_count < min_count:
-        status = "failed"
-        logger.error(f"Downloaded only {success_count} images, which is less than the minimum required {min_count}.")
     else:
         logger.info(f"Successfully completed download: {success_count}/{total_images} images.")
+        if success_count < min_count:
+            logger.info(
+                f"참고: 오늘 이미지 수({success_count}장)가 기본 예상치({min_count}장)보다 적지만, "
+                "전체 추출된 이미지를 모두 다운로드했으므로 성공으로 처리합니다."
+            )
 
     metadata = {
         "date": date_str,
