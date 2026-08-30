@@ -11,14 +11,16 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from app.utils import logger, get_safe_newspaper_dir
 from app.naver_cafe import NaverCafeScraper
 from app.image_downloader import download_images
+from app.pdf_builder import ensure_pdf
 
 def main():
     load_dotenv()
 
-    parser = argparse.ArgumentParser(description="Naver Cafe Newspaper Automated Collection - Phase 1")
+    parser = argparse.ArgumentParser(description="Naver Cafe Newspaper Automated Collection - Phase 1 & 2")
     parser.add_argument("--login", action="store_true", help="Run interactive Naver login to save session")
     parser.add_argument("--date", type=str, default=None, help="Target date in YYYY-MM-DD format (default: today)")
     parser.add_argument("--headful", action="store_true", help="Run Playwright in headful mode (visible browser)")
+    parser.add_argument("--pdf-only", action="store_true", help="Skip scraping; just (re)build the PDF from already-downloaded images")
 
     args = parser.parse_args()
 
@@ -44,6 +46,19 @@ def main():
 
     logger.info(f"Target date: {target_date}")
 
+    # PDF-only mode: skip scraping entirely, just build/refresh the PDF
+    if args.pdf_only:
+        pdf_path = ensure_pdf(target_date)
+        if pdf_path:
+            print(f"\n==========================================")
+            print(f"{target_date} PDF 생성 완료")
+            print(f"위치: {pdf_path}")
+            print(f"==========================================\n")
+        else:
+            print(f"\n[Error] {target_date}에 대해 PDF를 만들 이미지가 없습니다. 먼저 python app/main.py --date {target_date} 를 실행하세요.\n")
+            sys.exit(1)
+        return
+
     # 2. Check duplicate download
     try:
         target_dir = get_safe_newspaper_dir(target_date)
@@ -52,9 +67,12 @@ def main():
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 meta = json.load(f)
             if meta.get("status") == "success":
+                pdf_path = ensure_pdf(target_date)
                 print(f"\n==========================================")
                 print(f"이미 {target_date} 신문을 처리했습니다. (Status: success)")
                 print(f"위치: data/newspapers/{target_date}/")
+                if pdf_path:
+                    print(f"PDF: {pdf_path}")
                 print(f"==========================================\n")
                 return
     except Exception as e:
@@ -107,11 +125,14 @@ def main():
 
         # 5. Output Summary
         if metadata.get("status") == "success":
+            pdf_path = ensure_pdf(target_date)
             print(f"\n==========================================")
             print(f"{target_date} 신문 수집 완료")
             print(f"제목: {post_title}")
             print(f"이미지: {metadata['downloaded_count']}/{metadata['image_count']}장")
             print(f"위치: data/newspapers/{target_date}/")
+            if pdf_path:
+                print(f"PDF: {pdf_path}")
             print(f"==========================================\n")
         else:
             print(f"\n==========================================")
