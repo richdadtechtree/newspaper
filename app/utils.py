@@ -46,7 +46,9 @@ def get_safe_newspaper_dir(date_str: str) -> str:
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'newspapers'))
     os.makedirs(base_dir, exist_ok=True)
 
-    target_dir = os.path.abspath(os.path.join(base_dir, date_str))
+    # 월별 폴더(YYYY-MM) 안에 날짜별 폴더(YYYY-MM-DD)를 만든다.
+    year_month = date_str[:7]
+    target_dir = os.path.abspath(os.path.join(base_dir, year_month, date_str))
 
     # Security check: Ensure target_dir is strictly inside base_dir
     # Adding trailing separator prevents partial folder name bypasses (e.g. /data/newspapers-malicious)

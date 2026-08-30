@@ -70,7 +70,7 @@ def main():
                 pdf_path = ensure_pdf(target_date)
                 print(f"\n==========================================")
                 print(f"이미 {target_date} 신문을 처리했습니다. (Status: success)")
-                print(f"위치: data/newspapers/{target_date}/")
+                print(f"위치: {target_dir}")
                 if pdf_path:
                     print(f"PDF: {pdf_path}")
                 print(f"==========================================\n")
@@ -130,7 +130,7 @@ def main():
             print(f"{target_date} 신문 수집 완료")
             print(f"제목: {post_title}")
             print(f"이미지: {metadata['downloaded_count']}/{metadata['image_count']}장")
-            print(f"위치: data/newspapers/{target_date}/")
+            print(f"위치: {get_safe_newspaper_dir(target_date)}")
             if pdf_path:
                 print(f"PDF: {pdf_path}")
             print(f"==========================================\n")
