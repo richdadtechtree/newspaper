@@ -123,17 +123,18 @@ class NaverCafeScraper:
 
         target_post = None
 
-        for row in rows:
-            text = row.inner_text()
-            # Look for date pattern in the row: e.g. YYYY.MM.DD or HH:MM or today's date pattern
-            # Let's also check if the row text contains parts of the target date (e.g. "08.21" or "08-21" or "8월 21일")
-            # Usually, Naver Cafe lists show dates as:
-            # - Today: "HH:MM" (e.g. "07:30")
-            # - Older: "YYYY.MM.DD." (e.g. "2026.08.20.")
-            # Let's also check target date components: e.g. "2026.08.21" or "08.21"
-            date_dots = target_date.replace("-", ".")  # "2026.08.21"
-            date_short = date_dots[5:]  # "08.21"
+        # 게시글 제목은 "YY.M.D 신문스크랩" 형태(예: "26.9.1 신문스크랩", 앞자리 0 없음)를
+        # 사용한다. 앞뒤로 숫자가 더 붙지 않는 정확한 날짜만 매칭해서(예: "26.9.1"이
+        # "26.9.10"에 포함되어 오매칭되는 것을 방지), 오늘 게시글이 아직 없을 때
+        # 엉뚱한 과거 게시글을 잘못 채택하지 않도록 한다. 오늘 것을 못 찾으면 반드시
+        # None을 반환해서 (임의로 예전 게시글을 대신 쓰지 않고) 호출한 쪽에서 재시도하게 한다.
+        year, month, day = target_date.split("-")
+        yy = year[2:]
+        date_pattern = re.compile(
+            rf'(?<!\d){re.escape(yy)}\.0?{int(month)}\.0?{int(day)}(?!\d)'
+        )
 
+        for row in rows:
             # Also extract anchor link
             link_el = row.locator("a.article, a.article_title, a").first
             if not link_el or not link_el.is_visible():
@@ -142,27 +143,7 @@ class NaverCafeScraper:
             title = link_el.inner_text().strip()
             href = link_el.get_attribute("href") or ""
 
-            # Check if this row matches our date or title criteria
-            # E.g. Title might contain the date "8월 21일" or row contains the date
-            is_match = False
-            # Check if row mentions the short date (e.g. "08.21" or "8.21")
-            # Or if the title mentions the date (e.g. "8/21" or "8월 21일")
-            month_day_match = re.search(r'(\d{1,2})[월/.]\s*(\d{1,2})', title)
-            if month_day_match:
-                m, d = int(month_day_match.group(1)), int(month_day_match.group(2))
-                t_m, t_d = int(target_date.split("-")[1]), int(target_date.split("-")[2])
-                if m == t_m and d == t_d:
-                    is_match = True
-
-            if not is_match and (date_dots in text or date_short in text):
-                is_match = True
-
-            # If date is today, row date might be "HH:MM". Let's match if title contains the target day pattern
-            if not is_match and ":" in text and len(text.split("\n")) > 1:
-                # Row has time (which means it was posted today). Let's see if title looks like a newspaper post
-                # Typically newspaper posts have "신문" or "뉴스" or similar keywords
-                if "신문" in title or "뉴스" in title:
-                    is_match = True
+            is_match = bool(date_pattern.search(title))
 
             if is_match and href:
                 # Construct clean URL
