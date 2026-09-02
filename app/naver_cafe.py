@@ -64,7 +64,13 @@ class NaverCafeScraper:
             self.page.screenshot(path=f"{base}.png", full_page=True)
             with open(f"{base}.html", "w", encoding="utf-8") as f:
                 f.write(self.page.content())
-            logger.error(f"진단 정보 저장: {base}.png / {base}.html")
+            # 실제 게시글 본문은 cafe_main iframe 안에 있어서 self.page.content()에는
+            # 안 잡힌다. 진단이 의미 있으려면 iframe 내부 문서도 따로 저장해야 한다.
+            frame = self.page.frame(name="cafe_main")
+            if frame:
+                with open(f"{base}_iframe.html", "w", encoding="utf-8") as f:
+                    f.write(frame.content())
+            logger.error(f"진단 정보 저장: {base}.png / {base}.html" + (f" / {base}_iframe.html" if frame else ""))
         except Exception as e:
             logger.error(f"진단 정보 저장 실패: {e}")
 
@@ -203,7 +209,18 @@ class NaverCafeScraper:
         self.page.wait_for_load_state("networkidle")
         self.page.wait_for_timeout(3000)
 
-        # Naver Cafe articles are loaded in #cafe_main iframe.
+        # Naver Cafe articles render inside an iframe named "cafe_main" that
+        # is attached dynamically after the outer page loads. self.page.frame()
+        # is a one-shot lookup, not a wait: if it runs before Naver attaches
+        # the iframe, it silently returns None and every selector wait below
+        # then polls the wrong (outer) document forever. Wait for the iframe
+        # element itself to exist first so the frame lookup can't race ahead
+        # of it.
+        try:
+            self.page.wait_for_selector('iframe[name="cafe_main"]', timeout=15000)
+        except PlaywrightTimeoutError:
+            pass  # some articles may render without this iframe; fall through
+
         frame = self.page.frame(name="cafe_main")
         root = frame if frame else self.page
 
@@ -218,6 +235,10 @@ class NaverCafeScraper:
             self.page.reload()
             self.page.wait_for_load_state("networkidle")
             self.page.wait_for_timeout(3000)
+            try:
+                self.page.wait_for_selector('iframe[name="cafe_main"]', timeout=15000)
+            except PlaywrightTimeoutError:
+                pass
             frame = self.page.frame(name="cafe_main")
             root = frame if frame else self.page
             try:
