@@ -6,6 +6,8 @@ from playwright.sync_api import sync_playwright, Page, BrowserContext, TimeoutEr
 from app.utils import logger
 
 class NaverCafeScraper:
+    CAFE_ID = 31064119
+
     def __init__(self, headless: bool = True):
         self.profile_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'browser_profile'))
         os.makedirs(self.profile_dir, exist_ok=True)
@@ -73,6 +75,26 @@ class NaverCafeScraper:
             logger.error(f"진단 정보 저장: {base}.png / {base}.html" + (f" / {base}_iframe.html" if frame else ""))
         except Exception as e:
             logger.error(f"진단 정보 저장 실패: {e}")
+
+    def _wait_for_article_body(self):
+        """
+        Waits for the (possibly dynamically-attached) cafe_main iframe and
+        for the article body images inside it. Returns the root (frame or
+        page) to query further, or None if the body never rendered in time.
+        """
+        try:
+            self.page.wait_for_selector('iframe[name="cafe_main"]', timeout=15000)
+        except PlaywrightTimeoutError:
+            pass  # some articles render without this iframe; fall through
+
+        frame = self.page.frame(name="cafe_main")
+        root = frame if frame else self.page
+
+        try:
+            root.wait_for_selector(".se-module-image, .se-image-resource, img", timeout=20000)
+            return root
+        except PlaywrightTimeoutError:
+            return None
 
     def run_interactive_login(self):
         """Opens Naver Login page and lets the user manually authenticate."""
@@ -173,13 +195,18 @@ class NaverCafeScraper:
                 if not href.startswith("http"):
                     post_url = "https://cafe.naver.com" + href
 
-                # Extract article ID from URL/click script
+                # Extract article ID from URL/click script.
+                # The modern URL is .../articles/<id>?..., so check that
+                # specific pattern before falling back to legacy
+                # ?articleid=<id> or a bare digit run (which would otherwise
+                # match the cafe ID appearing earlier in the URL).
                 article_id = ""
-                id_match = re.search(r'articleid=(\d+)', post_url, re.IGNORECASE)
+                id_match = re.search(r'/articles/(\d+)', post_url)
+                if not id_match:
+                    id_match = re.search(r'articleid=(\d+)', post_url, re.IGNORECASE)
                 if id_match:
                     article_id = id_match.group(1)
                 else:
-                    # check if it is in href
                     id_match_href = re.search(r'(\d+)', href)
                     if id_match_href:
                         article_id = id_match_href.group(1)
@@ -209,44 +236,31 @@ class NaverCafeScraper:
         self.page.wait_for_load_state("networkidle")
         self.page.wait_for_timeout(3000)
 
-        # Naver Cafe articles render inside an iframe named "cafe_main" that
-        # is attached dynamically after the outer page loads. self.page.frame()
-        # is a one-shot lookup, not a wait: if it runs before Naver attaches
-        # the iframe, it silently returns None and every selector wait below
-        # then polls the wrong (outer) document forever. Wait for the iframe
-        # element itself to exist first so the frame lookup can't race ahead
-        # of it.
-        try:
-            self.page.wait_for_selector('iframe[name="cafe_main"]', timeout=15000)
-        except PlaywrightTimeoutError:
-            pass  # some articles may render without this iframe; fall through
+        root = self._wait_for_article_body()
 
-        frame = self.page.frame(name="cafe_main")
-        root = frame if frame else self.page
-
-        # Wait for article body. If it doesn't render in time, reload once and
-        # try again (SPA content occasionally fails to hydrate on first load)
-        # before giving up so the caller's retry loop picks it up later.
-        try:
-            root.wait_for_selector(".se-module-image, .se-image-resource, img", timeout=20000)
-        except PlaywrightTimeoutError:
+        if root is None:
             logger.warning("게시글 본문 로딩 타임아웃, 새로고침 후 재시도합니다.")
             self._save_debug_snapshot("post_load_timeout_1")
             self.page.reload()
             self.page.wait_for_load_state("networkidle")
             self.page.wait_for_timeout(3000)
-            try:
-                self.page.wait_for_selector('iframe[name="cafe_main"]', timeout=15000)
-            except PlaywrightTimeoutError:
-                pass
-            frame = self.page.frame(name="cafe_main")
-            root = frame if frame else self.page
-            try:
-                root.wait_for_selector(".se-module-image, .se-image-resource, img", timeout=20000)
-            except PlaywrightTimeoutError:
-                self._save_debug_snapshot("post_load_timeout_2")
-                logger.error(f"게시글 본문에서 이미지를 찾지 못했습니다 (post_url={target_post['url']}).")
-                return None
+            root = self._wait_for_article_body()
+
+        if root is None and target_post["id"]:
+            # 최신(ca-fe) SPA가 계속 렌더링에 실패하면, 훨씬 단순한 예전 방식
+            # 게시글 페이지로 한 번 더 시도해본다.
+            legacy_url = f"https://cafe.naver.com/ArticleRead.nhn?clubid={self.CAFE_ID}&articleid={target_post['id']}"
+            logger.warning(f"최신 페이지 로딩 실패, 예전 방식 페이지로 재시도합니다: {legacy_url}")
+            self._save_debug_snapshot("post_load_timeout_2")
+            self.page.goto(legacy_url)
+            self.page.wait_for_load_state("networkidle")
+            self.page.wait_for_timeout(3000)
+            root = self._wait_for_article_body()
+
+        if root is None:
+            self._save_debug_snapshot("post_load_timeout_3")
+            logger.error(f"게시글 본문에서 이미지를 찾지 못했습니다 (post_url={target_post['url']}).")
+            return None
 
         # Extract images
         # Naver Cafe editor (SmartEditor One) images are in `div.se-image-resource img` or `div.se-module-image img`
