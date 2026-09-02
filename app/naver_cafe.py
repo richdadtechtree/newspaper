@@ -1,7 +1,8 @@
 import os
 import re
 import time
-from playwright.sync_api import sync_playwright, Page, BrowserContext
+from datetime import datetime
+from playwright.sync_api import sync_playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 from app.utils import logger
 
 class NaverCafeScraper:
@@ -52,6 +53,20 @@ class NaverCafeScraper:
         if self.playwright:
             self.playwright.stop()
         logger.info("Browser closed.")
+
+    def _save_debug_snapshot(self, tag: str):
+        """Saves a screenshot + HTML dump of the current page for post-mortem debugging."""
+        debug_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'debug'))
+        os.makedirs(debug_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base = os.path.join(debug_dir, f"{tag}_{ts}")
+        try:
+            self.page.screenshot(path=f"{base}.png", full_page=True)
+            with open(f"{base}.html", "w", encoding="utf-8") as f:
+                f.write(self.page.content())
+            logger.error(f"진단 정보 저장: {base}.png / {base}.html")
+        except Exception as e:
+            logger.error(f"진단 정보 저장 실패: {e}")
 
     def run_interactive_login(self):
         """Opens Naver Login page and lets the user manually authenticate."""
@@ -192,8 +207,25 @@ class NaverCafeScraper:
         frame = self.page.frame(name="cafe_main")
         root = frame if frame else self.page
 
-        # Wait for article body
-        root.wait_for_selector(".se-module-image, .se-image-resource, img", timeout=15000)
+        # Wait for article body. If it doesn't render in time, reload once and
+        # try again (SPA content occasionally fails to hydrate on first load)
+        # before giving up so the caller's retry loop picks it up later.
+        try:
+            root.wait_for_selector(".se-module-image, .se-image-resource, img", timeout=20000)
+        except PlaywrightTimeoutError:
+            logger.warning("게시글 본문 로딩 타임아웃, 새로고침 후 재시도합니다.")
+            self._save_debug_snapshot("post_load_timeout_1")
+            self.page.reload()
+            self.page.wait_for_load_state("networkidle")
+            self.page.wait_for_timeout(3000)
+            frame = self.page.frame(name="cafe_main")
+            root = frame if frame else self.page
+            try:
+                root.wait_for_selector(".se-module-image, .se-image-resource, img", timeout=20000)
+            except PlaywrightTimeoutError:
+                self._save_debug_snapshot("post_load_timeout_2")
+                logger.error(f"게시글 본문에서 이미지를 찾지 못했습니다 (post_url={target_post['url']}).")
+                return None
 
         # Extract images
         # Naver Cafe editor (SmartEditor One) images are in `div.se-image-resource img` or `div.se-module-image img`
