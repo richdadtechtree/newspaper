@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import json
 from datetime import datetime
 from playwright.sync_api import sync_playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 from app.utils import logger
@@ -33,6 +34,10 @@ class NaverCafeScraper:
             user_data_dir=self.profile_dir,
             headless=self.headless,
             viewport={"width": 1280, "height": 1024},
+            # 네이버는 한국 서비스인데 Playwright 기본값(locale/timezone)은 en-US/UTC라
+            # 그 자체로 비정상 신호가 될 수 있다. 실제 한국 사용자 환경에 맞춘다.
+            locale="ko-KR",
+            timezone_id="Asia/Seoul",
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -75,6 +80,55 @@ class NaverCafeScraper:
             logger.error(f"진단 정보 저장: {base}.png / {base}.html" + (f" / {base}_iframe.html" if frame else ""))
         except Exception as e:
             logger.error(f"진단 정보 저장 실패: {e}")
+
+    def _start_network_capture(self):
+        """
+        Starts recording lightweight metadata (url/status/content-type, plus
+        a body preview for JSON responses) for non-static-asset responses.
+        Used to diagnose article-load failures with real network evidence
+        instead of guessing from the rendered DOM alone. Returns (log, handler);
+        pass both to _stop_network_capture() when done, and the log itself to
+        _dump_network_log() if you want to persist it.
+        """
+        log = []
+        static_exts = (".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ico")
+
+        def on_response(response):
+            url = response.url
+            if any(url.split("?")[0].endswith(ext) for ext in static_exts):
+                return
+            try:
+                content_type = response.headers.get("content-type", "")
+            except Exception:
+                content_type = ""
+            entry = {"url": url, "status": response.status, "content_type": content_type}
+            if "json" in content_type:
+                try:
+                    entry["body_preview"] = response.text()[:4000]
+                except Exception:
+                    pass
+            log.append(entry)
+
+        self.page.on("response", on_response)
+        return log, on_response
+
+    def _stop_network_capture(self, handler):
+        try:
+            self.page.remove_listener("response", handler)
+        except Exception:
+            pass
+
+    def _dump_network_log(self, log, tag):
+        debug_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'debug'))
+        os.makedirs(debug_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(debug_dir, f"{tag}_{ts}.json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(log, f, ensure_ascii=False, indent=2)
+            logger.error(f"네트워크 응답 기록 저장: {path} ({len(log)}건)")
+        except Exception as e:
+            logger.error(f"네트워크 응답 기록 저장 실패: {e}")
 
     def _wait_for_article_body(self):
         """
@@ -224,43 +278,50 @@ class NaverCafeScraper:
             logger.warning(f"Could not find a post matching date {target_date}.")
             return None
 
-        # Navigate to the article
-        logger.info(f"Opening post: {target_post['title']}")
-        if "javascript:" in target_post['url']:
-            # Click the element instead
-            # find the link element in the list again and click it
-            link_el.click()
-        else:
-            self.page.goto(target_post['url'])
+        # Navigate to the article. Capture network activity throughout so that,
+        # if every rendering attempt below fails, we have real evidence (API
+        # status codes / bodies) instead of only a blank DOM to guess from.
+        network_log, network_handler = self._start_network_capture()
+        try:
+            logger.info(f"Opening post: {target_post['title']}")
+            if "javascript:" in target_post['url']:
+                # Click the element instead
+                # find the link element in the list again and click it
+                link_el.click()
+            else:
+                self.page.goto(target_post['url'])
 
-        self.page.wait_for_load_state("networkidle")
-        self.page.wait_for_timeout(3000)
-
-        root = self._wait_for_article_body()
-
-        if root is None:
-            logger.warning("게시글 본문 로딩 타임아웃, 새로고침 후 재시도합니다.")
-            self._save_debug_snapshot("post_load_timeout_1")
-            self.page.reload()
             self.page.wait_for_load_state("networkidle")
             self.page.wait_for_timeout(3000)
+
             root = self._wait_for_article_body()
 
-        if root is None and target_post["id"]:
-            # 최신(ca-fe) SPA가 계속 렌더링에 실패하면, 훨씬 단순한 예전 방식
-            # 게시글 페이지로 한 번 더 시도해본다.
-            legacy_url = f"https://cafe.naver.com/ArticleRead.nhn?clubid={self.CAFE_ID}&articleid={target_post['id']}"
-            logger.warning(f"최신 페이지 로딩 실패, 예전 방식 페이지로 재시도합니다: {legacy_url}")
-            self._save_debug_snapshot("post_load_timeout_2")
-            self.page.goto(legacy_url)
-            self.page.wait_for_load_state("networkidle")
-            self.page.wait_for_timeout(3000)
-            root = self._wait_for_article_body()
+            if root is None:
+                logger.warning("게시글 본문 로딩 타임아웃, 새로고침 후 재시도합니다.")
+                self._save_debug_snapshot("post_load_timeout_1")
+                self.page.reload()
+                self.page.wait_for_load_state("networkidle")
+                self.page.wait_for_timeout(3000)
+                root = self._wait_for_article_body()
 
-        if root is None:
-            self._save_debug_snapshot("post_load_timeout_3")
-            logger.error(f"게시글 본문에서 이미지를 찾지 못했습니다 (post_url={target_post['url']}).")
-            return None
+            if root is None and target_post["id"]:
+                # 최신(ca-fe) SPA가 계속 렌더링에 실패하면, 훨씬 단순한 예전 방식
+                # 게시글 페이지로 한 번 더 시도해본다.
+                legacy_url = f"https://cafe.naver.com/ArticleRead.nhn?clubid={self.CAFE_ID}&articleid={target_post['id']}"
+                logger.warning(f"최신 페이지 로딩 실패, 예전 방식 페이지로 재시도합니다: {legacy_url}")
+                self._save_debug_snapshot("post_load_timeout_2")
+                self.page.goto(legacy_url)
+                self.page.wait_for_load_state("networkidle")
+                self.page.wait_for_timeout(3000)
+                root = self._wait_for_article_body()
+
+            if root is None:
+                self._save_debug_snapshot("post_load_timeout_3")
+                self._dump_network_log(network_log, "post_load_network")
+                logger.error(f"게시글 본문에서 이미지를 찾지 못했습니다 (post_url={target_post['url']}).")
+                return None
+        finally:
+            self._stop_network_capture(network_handler)
 
         # Extract images
         # Naver Cafe editor (SmartEditor One) images are in `div.se-image-resource img` or `div.se-module-image img`
