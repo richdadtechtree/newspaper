@@ -24,11 +24,17 @@ class NaverCafeScraper:
         self.playwright = sync_playwright().start()
 
         # 실제 Google Chrome이 설치된 환경(예: Mac)에서는 채널 "chrome"을 사용해
-        # 네이버의 자동화 탐지를 피한다. Chrome이 없는 환경(예: ARM 리눅스 서버)에서는
-        # PLAYWRIGHT_BROWSER_CHANNEL을 빈 값으로 설정하면 Playwright 내장 Chromium을
-        # 사용한다 (사전에 `playwright install chromium` 필요).
+        # 네이버의 자동화 탐지를 피한다. Chrome이 없는 ARM 리눅스 서버 등에서는
+        # Playwright 내장 Chromium 대신, apt로 설치한 시스템 Chromium을
+        # PLAYWRIGHT_CHROMIUM_EXECUTABLE 경로로 지정해 쓸 수 있다 (내장 Chromium은
+        # 네이버 봇 탐지에 걸려 게시글 본문이 안 뜨는 문제가 있었음). 둘 다 비어있으면
+        # Playwright 내장 Chromium을 사용한다 (사전에 `playwright install chromium` 필요).
         channel = os.environ.get("PLAYWRIGHT_BROWSER_CHANNEL", "chrome").strip()
-        logger.info(f"Launching browser with profile at {self.profile_dir} (headless={self.headless}, channel={channel or 'bundled chromium'})")
+        executable_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE", "").strip()
+        if executable_path:
+            channel = ""  # channel과 executable_path는 동시에 쓸 수 없음(Playwright 제약)
+        browser_desc = executable_path or channel or "bundled chromium"
+        logger.info(f"Launching browser with profile at {self.profile_dir} (headless={self.headless}, browser={browser_desc})")
 
         launch_kwargs = dict(
             user_data_dir=self.profile_dir,
@@ -44,7 +50,9 @@ class NaverCafeScraper:
                 "--disable-dev-shm-usage"
             ]
         )
-        if channel:
+        if executable_path:
+            launch_kwargs["executable_path"] = executable_path
+        elif channel:
             launch_kwargs["channel"] = channel
 
         self.context = self.playwright.chromium.launch_persistent_context(**launch_kwargs)

@@ -39,6 +39,10 @@ newspaper/
      `playwright install chromium`을 실행한 뒤 `.env`의
      `PLAYWRIGHT_BROWSER_CHANNEL`을 빈 값으로 설정하세요 (Playwright 내장
      Chromium 사용).
+     - Playwright 내장 Chromium은 네이버의 자동화 탐지에 걸려 로그인 세션이
+       멀쩡해도 게시글 본문이 안 뜨는 경우가 있었습니다. 이 문제가 발생하면
+       아래 "ARM 서버에서 게시글 본문이 안 뜨는 경우" 항목을 참고해 시스템
+       Chromium을 설치해 대신 사용하세요.
 3. 의존성 설치
 
    ```bash
@@ -199,6 +203,24 @@ cron에는 하루 한 번(05:30)만 등록하면 된다.
   게시글 제목 패턴이 예상과 다를 수 있음 → `logs/app.log` 확인
 - **이미지 개수가 부족함**: 일부 이미지 다운로드가 실패한 경우, 프로그램을
   다시 실행하면 이미 받은 이미지는 건너뛰고 누락분만 재시도함
+- **ARM 서버에서 게시글 본문이 안 뜨는 경우**: 로그인 세션은 정상인데(다른
+  PC에서는 잘 됨) ARM 서버에서만 계속 게시글 본문 로딩이 타임아웃되면,
+  Playwright 내장 Chromium이 네이버 봇 탐지에 걸리는 것일 수 있습니다. apt로
+  시스템 Chromium을 설치해 대신 사용하세요:
+  ```bash
+  sudo apt update
+  sudo apt install -y chromium-browser || sudo apt install -y chromium
+  which chromium-browser || which chromium
+  ```
+  위 `which` 명령이 출력한 경로를 `.env`의 `PLAYWRIGHT_CHROMIUM_EXECUTABLE`에
+  적어주세요 (설정하면 `PLAYWRIGHT_BROWSER_CHANNEL`은 자동으로 무시됩니다):
+  ```
+  PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium-browser
+  ```
+  Ubuntu 22.04 이상은 apt로 `chromium-browser`가 아니라 snap 패키지로만
+  제공될 수도 있습니다. 그런 경우 `apt install`이 안내하는 대로 snap을
+  이용하거나 `sudo snap install chromium`을 실행한 뒤,
+  `which chromium`(보통 `/snap/bin/chromium`)으로 경로를 확인하세요.
 - 실행 로그는 항상 `logs/app.log`에 누적됨
 
 ## 다음 단계 (구현 예정)
