@@ -196,6 +196,35 @@ cron에는 하루 한 번(05:30)만 등록하면 된다.
 컷오프 시각(기본 07:00)이나 재시도 간격(기본 5분)을 바꾸려면
 `scripts/run_daily.sh` 안의 `CUTOFF`, `INTERVAL_SECONDS` 값을 수정하면 된다.
 
+## 3-2) (Windows PC 전용) 매일 아침 자동 실행 — 작업 스케줄러
+
+오라클 클라우드 같은 서버는 IP 자체가 자동화 탐지에 걸려 게시글 본문을 못
+가져오는 경우가 있습니다. 이 경우 가정용 인터넷(PC)에서 실행하는 게 훨씬
+안정적입니다. `scripts/run_daily.ps1`은 `scripts/run_daily.sh`와 동일하게,
+성공하거나 07:00이 지날 때까지 5분 간격으로 재시도한 뒤 스스로 종료합니다.
+
+1. (선택) 구글 드라이브 데스크톱 앱이 설치되어 있다면, 위 "0) 저장 폴더를
+   구글 드라이브로 지정하기"를 참고해 `.env`의 `NEWSPAPER_OUTPUT_DIR`을 그
+   동기화 폴더로 지정해두면 결과물이 자동으로 구글 드라이브에도 올라갑니다.
+2. PowerShell을 **관리자 권한으로** 열고 작업 스케줄러에 등록 (경로는 실제
+   프로젝트 위치에 맞게 수정):
+   ```powershell
+   schtasks /Create /TN "NewspaperScrap" /TR "powershell.exe -ExecutionPolicy Bypass -File C:\Users\본인이름\Documents\newspaper-win\scripts\run_daily.ps1" /SC DAILY /ST 05:30
+   ```
+3. 등록 확인:
+   ```powershell
+   schtasks /Query /TN "NewspaperScrap"
+   ```
+4. PC가 잠자기 모드일 때도 실행되게 하려면, 작업 스케줄러 앱(`taskschd.msc`)을
+   열어 "NewspaperScrap" 작업 → 속성 → "조건" 탭에서 "작업을 실행하기 위해
+   컴퓨터를 절전 모드에서 해제" 체크박스를 켜주세요.
+5. 로그를 파일로 남기고 싶다면 위 `schtasks` 명령의 `-File ...` 뒤에
+   `*>> C:\...\logs\cron.log`처럼 리다이렉션을 추가하거나, 작업 스케줄러
+   GUI에서 동작(Action)에 로그 리다이렉션을 설정할 수 있습니다.
+
+컷오프 시각이나 재시도 간격을 바꾸려면 `scripts/run_daily.ps1` 안의
+`$Cutoff`, `$IntervalSeconds` 값을 수정하면 됩니다.
+
 ## 문제 발생 시
 
 - **로그인 오류**: `python app/main.py --login`을 다시 실행해 세션을 갱신
