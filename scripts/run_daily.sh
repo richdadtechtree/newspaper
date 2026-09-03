@@ -18,8 +18,17 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1"
 }
 
+# FORCE_HEADFUL=1로 설정된 화면 없는 서버에서는 Xvfb(가상 디스플레이) 위에서
+# 실행해야 headful 모드가 정상 동작한다. xvfb-run이 설치돼 있으면 항상 그걸로
+# 감싸서 실행한다 (FORCE_HEADFUL이 꺼져 있으면 아무 영향 없음).
+if command -v xvfb-run >/dev/null 2>&1; then
+    RUN_CMD="xvfb-run -a python app/main.py"
+else
+    RUN_CMD="python app/main.py"
+fi
+
 while true; do
-    python app/main.py
+    $RUN_CMD
     if [ $? -eq 0 ]; then
         log "성공, 종료합니다."
         exit 0

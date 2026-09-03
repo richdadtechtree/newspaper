@@ -113,7 +113,11 @@ def main():
         logger.warning(f"Error checking duplicate: {e}")
 
     # 3. Start Scraping
-    scraper = NaverCafeScraper(headless=not args.headful)
+    # 네이버 봇 탐지가 headless Chrome 자체를 감지하는 것으로 보여, 화면 없는
+    # 서버에서도 Xvfb(가상 디스플레이) 위에서 "화면이 있는 척" 띄우고 싶을 때는
+    # FORCE_HEADFUL=1을 설정해 headless를 강제로 끌 수 있다 (xvfb-run과 함께 사용).
+    force_headful = os.environ.get("FORCE_HEADFUL", "").strip().lower() in ("1", "true", "yes")
+    scraper = NaverCafeScraper(headless=not (args.headful or force_headful))
     try:
         scraper.start_browser()
 
