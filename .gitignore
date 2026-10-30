@@ -12,6 +12,7 @@ node_modules/
 
 # 로그인 세션 (절대 커밋하지 않음 - 카페/네이버 로그인 상태가 담긴 브라우저 프로필)
 browser_profile/
+browser_profile_pressreader/
 
 # 다운로드한 신문 이미지 / 결과물
 data/
