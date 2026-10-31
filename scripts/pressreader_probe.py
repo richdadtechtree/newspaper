@@ -55,7 +55,15 @@ def do_login():
         ctx = launch(p, headless=False)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto("https://pressreader.nl.go.kr/")
-        input("국립중앙도서관 로그인을 마치고, 매일경제 지면이 보이면 여기서 Enter를 누르세요... ")
+        # 붙여넣기로 딸려 온 엔터가 입력 버퍼에 남아 있으면 input()이 바로 통과해 버리므로 먼저 비운다
+        try:
+            import termios
+            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+        except Exception:
+            pass  # Windows 등 termios가 없는 환경은 그냥 진행
+        # 엔터만으로는 넘어가지 않게, 'done'을 직접 입력해야 저장하고 종료한다
+        while input("로그인을 마치고 매일경제 지면이 보이면 done 이라고 입력 후 Enter: ").strip().lower() != "done":
+            print("아직 종료하지 않습니다. 브라우저에서 로그인을 계속하세요.")
         ctx.close()
     print("세션 저장 완료. 이제 --login 없이 실행하세요.")
 
