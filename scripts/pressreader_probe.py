@@ -41,6 +41,8 @@ def launch(p, headless: bool):
         locale="ko-KR",
         timezone_id="Asia/Seoul",
         viewport={"width": 1600, "height": 1000},
+        # 서버(ARM/컨테이너)에서 브라우저가 멈추지 않도록 기존 naver_cafe.py와 같은 옵션을 쓴다
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
     )
     # ARM 서버 등에서 시스템 Chromium을 쓰는 기존 프로젝트와 같은 환경변수를 존중
     exe = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE", "").strip()
