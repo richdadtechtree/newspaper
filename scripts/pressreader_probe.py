@@ -123,6 +123,14 @@ def probe(date_str: str, headless: bool):
         with open(os.path.join(out_dir, "01_page.html"), "w", encoding="utf-8") as f:
             f.write(page.content())
 
+        # 지면 주소가 아닌 곳(도서관 로그인 페이지 등)으로 튕겼다면 로그인이 안 된 것이므로 여기서 멈춘다
+        if "pressreader" not in page.url.split("/")[2]:
+            print("\n[중단] 로그인이 안 된 상태입니다 (도서관 로그인 페이지로 이동됨).")
+            print("--login 으로 VNC 화면에서 로그인을 끝낸 뒤 done 을 입력하세요.")
+            print(f"스크린샷: {os.path.join(out_dir, '01_page.png')}")
+            ctx.close()
+            return
+
         # 기사 영역(핫스팟)으로 추정되는 요소를 DOM에서 찾아본다
         hotspots = page.evaluate("""() => {
             const sel = '[class*="article" i], [class*="hotspot" i], [class*="region" i], area, svg polygon, svg path[data-article]';
@@ -133,7 +141,7 @@ def probe(date_str: str, headless: bool):
                         data: Object.fromEntries(Array.from(e.attributes).filter(a => a.name.startsWith('data-')).map(a => [a.name, a.value.slice(0,80)])),
                         x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height)};
             });
-        }""")
+        }""") or []  # 페이지 이동 중이면 None이 올 수 있어 빈 목록으로 대체
         with open(os.path.join(out_dir, "hotspots.json"), "w", encoding="utf-8") as f:
             json.dump(hotspots, f, ensure_ascii=False, indent=2)
         print(f"기사 영역 후보 요소: {len(hotspots)}개")
