@@ -78,11 +78,21 @@ def probe(date_str: str, headless: bool, interactive: bool = False):
     os.makedirs(img_dir, exist_ok=True)
 
     records = []  # 이미지로 보이는 모든 응답 기록
+    api_urls = []  # 저장한 JSON 응답의 URL 목록 (어떤 API가 기사 정보를 주는지 찾는 용도)
 
     def on_response(resp):
         """이미지 응답을 가로채 파일로 저장하고 메타정보를 남긴다."""
         try:
             ctype = resp.headers.get("content-type", "")
+            # JSON/텍스트 API 응답은 기사 영역 좌표·제목·본문이 들어 있을 수 있어 따로 저장한다
+            if "json" in ctype:
+                api_dir = os.path.join(out_dir, "api")
+                os.makedirs(api_dir, exist_ok=True)
+                n = len(os.listdir(api_dir))
+                with open(os.path.join(api_dir, f"{n:03d}.json"), "wb") as f:
+                    f.write(resp.body())
+                api_urls.append({"n": n, "url": resp.url, "status": resp.status, "phase": current_phase["name"]})
+                return
             if not ctype.startswith("image/"):
                 return
             body = resp.body()
@@ -173,6 +183,12 @@ def probe(date_str: str, headless: bool, interactive: bool = False):
 
     with open(os.path.join(out_dir, "network_images.json"), "w", encoding="utf-8") as f:
         json.dump(records, f, ensure_ascii=False, indent=2)
+
+    with open(os.path.join(out_dir, "api_urls.json"), "w", encoding="utf-8") as f:
+        json.dump(api_urls, f, ensure_ascii=False, indent=2)
+    print(f"JSON API 응답 {len(api_urls)}건 저장 → {os.path.join(out_dir, 'api')}")
+    for a in api_urls[:20]:
+        print(f"  API {a['n']:03d} [{a['status']}] {a['url'][:120]}")
 
     # 요약: 큰 이미지 순으로 출력 → 이게 곧 '지면 해상도'를 보여준다
     ok = [r for r in records if r.get("width")]
