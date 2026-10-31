@@ -70,7 +70,7 @@ def do_login():
     print("세션 저장 완료. 이제 --login 없이 실행하세요.")
 
 
-def probe(date_str: str, headless: bool):
+def probe(date_str: str, headless: bool, interactive: bool = False):
     ymd = date_str.replace("-", "")
     url = f"{BASE}/{ymd}/page/1"
     out_dir = os.path.join(ROOT, "data", "pressreader_probe", date_str)
@@ -111,6 +111,19 @@ def probe(date_str: str, headless: bool):
     with sync_playwright() as p:
         ctx = launch(p, headless=headless)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
+
+        # 로그인 쿠키가 '세션 쿠키'면 브라우저를 닫는 순간 사라진다. 그래서 같은 브라우저 안에서
+        # 로그인 → 탐침을 이어서 한다. (로그인 중 오가는 이미지는 기록하지 않도록 핸들러는 그 뒤에 연결)
+        if interactive:
+            page.goto("https://pressreader.nl.go.kr/")
+            try:
+                import termios
+                termios.tcflush(sys.stdin, termios.TCIFLUSH)
+            except Exception:
+                pass
+            while input("VNC 브라우저에서 로그인하고 지면이 보이면 done 입력 후 Enter: ").strip().lower() != "done":
+                print("브라우저에서 로그인을 계속하세요.")
+
         page.on("response", on_response)
 
         print(f"접속: {url}")
@@ -175,11 +188,12 @@ def main():
     ap.add_argument("--login", action="store_true", help="도서관 로그인 세션 저장")
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"), help="YYYY-MM-DD")
     ap.add_argument("--headless", action="store_true", help="브라우저 창 숨김 (기본은 창 표시)")
+    ap.add_argument("--interactive", action="store_true", help="같은 브라우저에서 로그인 후 바로 탐침 실행 (세션 쿠키가 저장 안 될 때 사용)")
     args = ap.parse_args()
     if args.login:
         do_login()
     else:
-        probe(args.date, args.headless)
+        probe(args.date, args.headless, args.interactive)
 
 
 if __name__ == "__main__":
