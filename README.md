@@ -149,16 +149,18 @@ newspaper/
 - **자동 실행**: cron 이 `scripts/run_daily.sh` 를 부름 (openclaw 의
   `scripts/set-newspaper-schedule.sh` 로 시작 시각을 05:00 으로 맞춰 둠 → 05:00~07:00 5분마다 확인).
   07:00 까지 실패하면 openclaw 의 `paper-retry-0800.sh` 가 08:00 에 한 번 더.
-- **⚠️ 이 저장소는 서버에 자동으로 반영되지 않습니다** (openclaw 만 1분마다 자동 pull).
-  코드를 고친 뒤에는 서버에서 직접 받아야 합니다. 기본 브랜치 이름이 `main` 이 아닌 점 주의:
-  ```bash
-  cd ~/newspaper && git pull origin claude/naver-cafe-newspaper-download-caonzo
-  ```
-  받았는지 확인: `grep -c '"--force"' ~/newspaper/app/main.py` → `1` 이면 새 버전.
-  (웹 버튼 결과에 "수집기가 예전 버전" 경고가 뜨면 아직 안 받은 것)
+- **서버 반영은 자동**(2026-11-13~): openclaw 의 `git-auto-pull.sh`(1분마다)가
+  `scripts/newspaper_auto_pull.py` 로 **5분에 한 번** 이 저장소를 확인해 새 커밋을 받습니다.
+  - 기본 브랜치 이름이 `main` 이 아니라 `claude/naver-cafe-newspaper-download-caonzo` 입니다 — 여기에 올리면 반영.
+  - 수집기가 돌고 있으면 기다렸다가, 끝난 뒤 받습니다.
+  - 앞으로 감기만 하고, 서버에서 고친 파일과 겹치거나 받은 코드가 문법 검사에서 깨지면
+    **받지 않고/되돌리고** 로그만 남깁니다 (서버 `~/.openclaw/scripts/auto-pull.log` 의 `[newspaper-pull]` 줄).
+  - 받았는지 확인: 웹 🔁 다운로드 결과에 "수집기가 예전 버전" 경고가 없으면 새 버전.
+    서버에서는 `python3 ~/.openclaw/scripts/newspaper_auto_pull.py --status`.
+  - 손으로 받고 싶으면: `cd ~/newspaper && git pull origin claude/naver-cafe-newspaper-download-caonzo`
 - **서버에서 덧댄 수정(openclaw 패치)**
   - 제목 필터(`patch-newspaper-title-filter.sh`) — **이제 이 저장소에 들어 있어 필요 없음.**
-    예전 패치가 서버 파일에 남아 있으면 pull 전에 `git checkout -- app/naver_cafe.py` 로 지우세요.
+    예전 패치가 서버 파일에 남아 있으면 자동 받기가 백업(`.bak-autopull-시각`)을 남기고 지웁니다.
   - 오늘치 로컬 보관(`patch-newspaper-keep-local.sh`) — `drive_uploader.py` 가 업로드 뒤
     폴더를 통째로 지우지 않고 **오늘치는 남기게** 함 (웹 화면이 사진을 읽어야 해서).
     아직 이 저장소엔 없으므로 서버 패치를 유지하세요.
