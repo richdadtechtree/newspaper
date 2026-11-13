@@ -248,7 +248,9 @@ class NaverCafeScraper:
             title = link_el.inner_text().strip()
             href = link_el.get_attribute("href") or ""
 
-            is_match = bool(date_pattern.search(title))
+            # 날짜만 보면 같은 날짜의 다른 글(예: "26.11.13 미모")을 집는다 →
+            # 제목에 '신문스크랩'(NEWSPAPER_TITLE_KEYWORD)이 있는 글만 고른다.
+            is_match = bool(date_pattern.search(title)) and _oc_title_ok(title)
 
             if is_match and href:
                 # Construct clean URL
@@ -384,3 +386,42 @@ class NaverCafeScraper:
             "image_urls": image_urls,
             "cookies": cookies
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 어떤 글을 '오늘 신문'으로 볼지 거르는 조건
+#
+# 카페 게시판엔 같은 날짜로 시작하는 다른 글(예: "26.11.13 미모")이 신문 글보다
+# 위에 올라올 때가 있다. 날짜만 보면 그 글(사진 몇 장)을 신문으로 착각해 받는다.
+# (2026-09-16 실제 사고 — 신문 30장 대신 6장을 받아 드라이브까지 덮어씀)
+#
+#   NEWSPAPER_TITLE_KEYWORD  제목에 반드시 있어야 할 말 (기본: 신문스크랩)
+#                            빈 값으로 두면 이 조건을 끈다(= 날짜만 보는 예전 동작)
+#   NEWSPAPER_TITLE_EXCLUDE  제외할 말들, 쉼표 구분 (선택, 예: 공지,테스트)
+#
+# 띄어쓰기는 무시하고 비교한다("신문 스크랩"도 통과).
+# 함수 이름 _oc_title_ok 는 openclaw 의 patch-newspaper-title-filter.sh 가
+# '이미 적용됨'으로 알아보는 표시라서 그대로 둔다.
+# ─────────────────────────────────────────────────────────────────────────────
+def _oc_title_ok(title: str) -> bool:
+    import os
+
+    def squash(s):
+        return (s or "").replace(" ", "").replace("\t", "")
+
+    t = squash(title)
+
+    for bad in os.getenv("NEWSPAPER_TITLE_EXCLUDE", "").split(","):
+        if bad.strip() and squash(bad) in t:
+            logger.info(f"[filter] 제외어 '{bad.strip()}' 때문에 건너뜀: {title}")
+            return False
+
+    keyword = os.getenv("NEWSPAPER_TITLE_KEYWORD", "신문스크랩").strip()
+    if not keyword:
+        return True                       # 조건 끔 → 예전처럼 날짜만 본다
+
+    if squash(keyword) in t:
+        return True
+
+    logger.info(f"[filter] 제목에 '{keyword}' 가 없어 건너뜀: {title}")
+    return False

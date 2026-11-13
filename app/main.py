@@ -2,6 +2,9 @@ import os
 import sys
 import argparse
 import json
+import glob
+import shutil
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -47,6 +50,42 @@ def finalize_output(target_date: str):
     return {"location": pdf_path or target_dir, "uploaded": False}
 
 
+# ── --force(새로 받기) 때 쓰는 백업/복구 ────────────────────────────────────────
+# 이미 받은 날을 다시 받을 때, 예전 폴더를 바로 지우지 않고 옆으로 옮겨 둔다.
+# 새로 받기가 실패하면 예전 폴더를 되돌려 놓아 '아무것도 없는 날'이 생기지 않게 한다.
+# 백업 이름은 점(.)으로 시작해서(.2026-11-13.replaced-1700000000) 날짜 폴더를 찾는
+# 다른 프로그램(openclaw news_sync 등)이 실수로 집지 않는다.
+def _backup_day_dir(target_dir: str):
+    """target_dir 에 파일이 있으면 백업 폴더로 옮기고 그 경로를 돌려준다(없으면 None)."""
+    if not os.path.isdir(target_dir) or not os.listdir(target_dir):
+        return None
+    parent, name = os.path.split(target_dir.rstrip(os.sep))
+    # 같은 날짜의 예전 백업은 하나만 남기면 충분하다 → 오래된 건 지운다
+    for old in glob.glob(os.path.join(parent, f".{name}.replaced-*")):
+        shutil.rmtree(old, ignore_errors=True)
+    backup = os.path.join(parent, f".{name}.replaced-{int(time.time())}")
+    shutil.move(target_dir, backup)
+    logger.info(f"[force] 예전 폴더를 백업으로 옮김: {target_dir} -> {backup}")
+    return backup
+
+
+def _restore_day_dir(target_dir: str, backup):
+    """새로 받기가 실패했을 때 백업을 원래 자리로 되돌린다."""
+    if not backup or not os.path.isdir(backup):
+        return
+    if os.path.exists(target_dir):
+        shutil.rmtree(target_dir, ignore_errors=True)
+    shutil.move(backup, target_dir)
+    logger.info(f"[force] 새로 받기 실패 → 예전 폴더로 되돌림: {target_dir}")
+
+
+def _drop_backup(backup):
+    """새로 받기가 성공하면 백업은 필요 없다."""
+    if backup and os.path.isdir(backup):
+        shutil.rmtree(backup, ignore_errors=True)
+        logger.info(f"[force] 새로 받기 성공 → 백업 삭제: {backup}")
+
+
 def main():
     load_dotenv()
 
@@ -55,6 +94,8 @@ def main():
     parser.add_argument("--date", type=str, default=None, help="Target date in YYYY-MM-DD format (default: today)")
     parser.add_argument("--headful", action="store_true", help="Run Playwright in headful mode (visible browser)")
     parser.add_argument("--pdf-only", action="store_true", help="Skip scraping; just (re)build the PDF from already-downloaded images")
+    parser.add_argument("--force", action="store_true",
+                        help="이미 받은 날이어도 카페에서 새로 받는다 (예전 폴더는 백업했다가 성공하면 지우고, 실패하면 되돌림)")
 
     args = parser.parse_args()
 
@@ -94,23 +135,28 @@ def main():
             sys.exit(1)
         return
 
-    # 2. Check duplicate download
-    try:
-        target_dir = get_safe_newspaper_dir(target_date)
-        metadata_path = os.path.join(target_dir, "metadata.json")
-        if os.path.exists(metadata_path):
-            with open(metadata_path, 'r', encoding='utf-8') as f:
-                meta = json.load(f)
-            if meta.get("status") == "success":
-                result = finalize_output(target_date)
-                print(f"\n==========================================")
-                print(f"이미 {target_date} 신문을 처리했습니다. (Status: success)")
-                if result:
-                    print(f"위치: {result['location']}" + (" (구글 드라이브)" if result["uploaded"] else ""))
-                print(f"==========================================\n")
-                return
-    except Exception as e:
-        logger.warning(f"Error checking duplicate: {e}")
+    # 2. Check duplicate download (--force 면 건너뛰고 무조건 새로 받는다)
+    if args.force:
+        logger.info(f"[force] {target_date} 를 이미 받았어도 카페에서 새로 받습니다.")
+    else:
+        try:
+            target_dir = get_safe_newspaper_dir(target_date)
+            metadata_path = os.path.join(target_dir, "metadata.json")
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+                if meta.get("status") == "success":
+                    result = finalize_output(target_date)
+                    print(f"\n==========================================")
+                    print(f"이미 {target_date} 신문을 처리했습니다. (Status: success)")
+                    if result:
+                        print(f"위치: {result['location']}" + (" (구글 드라이브)" if result["uploaded"] else ""))
+                    print(f"==========================================\n")
+                    return
+        except Exception as e:
+            logger.warning(f"Error checking duplicate: {e}")
+
+    backup_dir = None            # --force 때 옮겨 둔 예전 폴더(실패하면 되돌림)
 
     # 3. Start Scraping
     # 네이버 봇 탐지가 headless Chrome 자체를 감지하는 것으로 보여, 화면 없는
@@ -152,6 +198,11 @@ def main():
             print("\n[Error] 게시글에서 이미지를 발견하지 못했습니다.\n")
             sys.exit(1)
 
+        # --force: 새 글과 사진 주소를 찾은 '뒤에야' 예전 폴더를 비킨다.
+        # (글을 못 찾았으면 위에서 이미 끝났으므로 예전 파일은 그대로 남는다)
+        if args.force:
+            backup_dir = _backup_day_dir(get_safe_newspaper_dir(target_date))
+
         metadata = download_images(
             date_str=target_date,
             post_title=post_title,
@@ -163,6 +214,8 @@ def main():
 
         # 5. Output Summary
         if metadata.get("status") == "success":
+            _drop_backup(backup_dir)
+            backup_dir = None
             result = finalize_output(target_date)
             print(f"\n==========================================")
             print(f"{target_date} 신문 수집 완료")
@@ -178,11 +231,16 @@ def main():
             print(f"상태: {metadata['status']}")
             print(f"로그를 확인해주세요: logs/app.log")
             print(f"==========================================\n")
+            _restore_day_dir(get_safe_newspaper_dir(target_date), backup_dir)
             sys.exit(1)
 
     except Exception as e:
         logger.exception(f"Unexpected error during execution: {e}")
         print(f"\n[Error] 실행 중 예기치 않은 오류 발생: {e}\n")
+        try:
+            _restore_day_dir(get_safe_newspaper_dir(target_date), backup_dir)
+        except Exception as re_err:
+            logger.error(f"[force] 예전 폴더 되돌리기 실패: {re_err}")
         if scraper:
             try:
                 scraper.close()
